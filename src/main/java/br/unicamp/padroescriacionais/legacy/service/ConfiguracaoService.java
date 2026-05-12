@@ -4,12 +4,7 @@ import br.unicamp.padroescriacionais.legacy.domain.ConfiguracaoSistema;
 
 public class ConfiguracaoService {
 
-    private ConfiguracaoSistema configuracao = new ConfiguracaoSistema(
-            "Empresa XPTO Ltda.",
-            "DEV",
-            "/tmp/relatorios",
-            true
-    );
+    private final ConfiguracaoSistema configuracao = ConfiguracaoSistema.getInstancia();
 
     public ConfiguracaoSistema getConfiguracao() {
         return configuracao;

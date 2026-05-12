@@ -2,8 +2,9 @@ package br.unicamp.padroescriacionais.legacy.generator;
 
 import br.unicamp.padroescriacionais.legacy.domain.Relatorio;
 
-public class PdfRelatorioGenerator {
+public class PdfRelatorioGenerator implements RelatorioGenerator {
 
+    @Override
     public String gerar(Relatorio relatorio) {
         StringBuilder sb = new StringBuilder();
         sb.append("╔══════════════════════════════════════════╗\n");

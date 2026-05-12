@@ -1,0 +1,455 @@
+\documentclass[12pt, a4paper]{article}
+
+% ======================== PACOTES ========================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+\usepackage{adjustbox}
+\usepackage[htt]{hyphenat}
+\usepackage{microtype}
+
+\geometry{margin=2.5cm}
+\setlength{\emergencystretch}{3em}
+
+% ======================== CORES ========================
+\definecolor{codegreen}{rgb}{0.25,0.49,0.38}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{codeblue}{rgb}{0.13,0.29,0.53}
+\definecolor{backcolour}{rgb}{0.96,0.96,0.96}
+\definecolor{unicampblue}{RGB}{0, 83, 138}
+
+% ======================== LISTINGS ========================
+\lstdefinestyle{javastyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{codeblue}\bfseries,
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=8pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=4,
+    frame=single,
+    rulecolor=\color{codegray},
+    language=Java
+}
+\lstset{style=javastyle}
+
+% ======================== HYPERREF ========================
+\hypersetup{
+    colorlinks=true,
+    linkcolor=unicampblue,
+    urlcolor=unicampblue,
+    citecolor=unicampblue
+}
+
+% ======================== CABEÇALHO ========================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small SI405 --- Padrões de Projeto}
+\fancyhead[R]{\small Faculdade de Tecnologia --- Unicamp}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ======================== TÍTULO ========================
+\title{
+    \vspace{-1cm}
+    \textbf{\Large Relatório Técnico} \\[0.3cm]
+    \textbf{\LARGE Refatoração com Padrões Criacionais}
+}
+\author{}
+\date{}
+
+\begin{document}
+
+% ======================== CAPA ========================
+\maketitle
+\vspace{-1.5cm}
+
+\begin{center}
+    \begin{tabular}{ll}
+        \textbf{Disciplina:}  & SI405 --- Padrões de Projeto \\
+        \textbf{Instituição:} & Faculdade de Tecnologia --- Unicamp \\
+        \textbf{Data:}        & 12 de maio de 2026 \\
+    \end{tabular}
+\end{center}
+
+\vspace{0.5cm}
+\hrule
+\vspace{0.8cm}
+
+\tableofcontents
+
+\newpage
+
+% ================================================================
+% SEÇÃO 1
+% ================================================================
+\section{Análise dos Principais Problemas Arquiteturais Identificados}
+
+Após análise criteriosa do código legado, foram identificados os seguintes problemas arquiteturais:
+
+\subsection{Dispersão da Lógica de Criação de Objetos}
+
+Os geradores de relatório (\texttt{PdfRelatorioGenerator}, \texttt{CsvRelatorioGenerator}, \texttt{JsonRelatorioGenerator}) eram instanciados diretamente dentro dos serviços por meio de blocos \texttt{switch/case} e \texttt{if/else-if}:
+
+\begin{itemize}
+    \item Em \texttt{RelatorioService.gerarRelatorio()} --- cadeia de \texttt{if/else-if} com \texttt{new PdfRelatorioGenerator()}, \texttt{new CsvRelatorioGenerator()}, \texttt{new JsonRelatorioGenerator()}
+    \item Em \texttt{ExportacaoService.exportar()} --- \texttt{switch/case} com a mesma lógica duplicada
+\end{itemize}
+
+Isso significava que \textbf{a lógica de criação estava replicada em dois locais distintos}, violando o princípio DRY (\textit{Don't Repeat Yourself}) e o Princípio da Responsabilidade Única (SRP).
+
+\subsection{Alto Acoplamento entre Serviços e Implementações Concretas}
+
+Tanto \texttt{RelatorioService} quanto \texttt{ExportacaoService} dependiam diretamente das classes concretas dos geradores. Não havia nenhuma abstração (interface ou classe abstrata) unificando os geradores, o que:
+
+\begin{itemize}
+    \item Impedia a substituição de implementações sem modificar os serviços
+    \item Dificultava a adição de novos formatos (cada novo formato exigia alteração em múltiplos arquivos)
+    \item Impossibilitava injeção de dependência e testes com mocks
+\end{itemize}
+
+\subsection{Instâncias Inconsistentes de Configuração}
+
+O problema mais sutil e de maior impacto identificado: \textbf{cada serviço criava sua própria instância de \texttt{ConfiguracaoSistema} com valores diferentes}:
+
+\begin{table}[h!]
+\centering
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lllll}
+\toprule
+\textbf{Serviço} & \textbf{Empresa} & \textbf{Ambiente} & \textbf{Diretório} & \textbf{Debug} \\
+\midrule
+\texttt{RelatorioService}    & ``Empresa XPTO''       & ``DEV''  & \texttt{/tmp/relatorios}       & \texttt{false} \\
+\texttt{ExportacaoService}   & ``Empresa XPTO Ltda.'' & ``PROD'' & \texttt{/var/exports/relatorios} & \texttt{false} \\
+\texttt{ConfiguracaoService} & ``Empresa XPTO Ltda.'' & ``DEV''  & \texttt{/tmp/relatorios}       & \texttt{true}  \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\caption{Configurações divergentes entre os serviços no código legado}
+\end{table}
+
+Isso violava a premissa de que configurações globais devem ser \textbf{únicas e consistentes} em toda a aplicação. Uma alteração de ambiente em um serviço não se refletia nos demais.
+
+\subsection{Falta de Extensibilidade}
+
+A inexistência de uma interface comum para os geradores e a dispersão da criação por \texttt{switch/case} tornavam a adição de um novo formato de relatório um processo trabalhoso e propenso a erros, exigindo alterações em pelo menos 3 arquivos.
+
+% ================================================================
+% SEÇÃO 2
+% ================================================================
+\section{Justificativa das Decisões Arquiteturais}
+
+\subsection{Por que Factory Method?}
+
+O padrão \textbf{Factory Method} foi escolhido porque os problemas identificados (duplicação de lógica de criação, alto acoplamento com classes concretas, dificuldade de extensão) são exatamente os cenários clássicos que esse padrão resolve:
+
+\begin{itemize}
+    \item \textbf{Centraliza a decisão de criação} em um único local (\texttt{RelatorioGeneratorFactory})
+    \item \textbf{Desacopla os serviços} das implementações concretas por meio da interface \texttt{RelatorioGenerator}
+    \item \textbf{Facilita extensão}: adicionar um novo formato requer apenas criar a classe geradora e adicionar uma linha na fábrica
+\end{itemize}
+
+\subsection{Por que Singleton?}
+
+O padrão \textbf{Singleton} foi escolhido para \texttt{ConfiguracaoSistema} porque:
+
+\begin{itemize}
+    \item A configuração do sistema representa um \textbf{recurso compartilhado} que deve ser globalmente consistente
+    \item Múltiplas instâncias com valores divergentes é um defeito real (já presente no código legado)
+    \item O Singleton garante \textbf{ponto único de acesso} e \textbf{unicidade da instância}
+\end{itemize}
+
+\subsection{Decisão de Manter o Construtor Público}
+
+O construtor público de \texttt{ConfiguracaoSistema} foi mantido por dois motivos:
+
+\begin{enumerate}
+    \item \textbf{Compatibilidade retroativa}: os testes legados criam instâncias independentes para testar getters/setters
+    \item \textbf{Flexibilidade}: permite cenários de teste onde configurações isoladas são necessárias
+\end{enumerate}
+
+A unicidade é garantida pelo método \texttt{getInstancia()} para uso na aplicação, enquanto o construtor serve para testes e cenários excepcionais.
+
+% ================================================================
+% SEÇÃO 3
+% ================================================================
+\section{Explicação da Aplicação do Factory Method}
+
+\subsection{Estrutura Implementada}
+
+A Figura~\ref{fig:factory-diagram} apresenta o diagrama de classes da estrutura implementada com o padrão Factory Method.
+
+\begin{figure}[h!]
+\centering
+\begin{adjustbox}{max width=\textwidth}
+\begin{tikzpicture}[
+    class/.style={rectangle, draw=black, fill=backcolour, minimum width=4.8cm, minimum height=1.2cm, text centered, font=\small\ttfamily},
+    interface/.style={rectangle, draw=unicampblue, fill=blue!5, minimum width=4.8cm, minimum height=1.6cm, text centered, font=\small\ttfamily},
+    factory/.style={rectangle, draw=black!70, fill=yellow!10, minimum width=5cm, minimum height=1.2cm, text centered, font=\small\ttfamily},
+    arrow/.style={->, >=stealth, thick, dashed},
+    uses/.style={->, >=stealth, thick}
+]
+
+% Interface
+\node[interface] (iface) at (0, 4) {
+    \begin{tabular}{c}
+    \textit{<<interface>>} \\
+    \textbf{RelatorioGenerator} \\
+    \scriptsize +gerar(Relatorio): String
+    \end{tabular}
+};
+
+% Factory
+\node[factory] (factory) at (8, 4) {
+    \begin{tabular}{c}
+    \textbf{RelatorioGeneratorFactory} \\
+    \scriptsize +criarGerador(Formato): Generator
+    \end{tabular}
+};
+
+% Concrete classes
+\node[class] (pdf) at (-4, 0.5) {\textbf{PdfRelatorioGenerator}};
+\node[class] (csv) at (-4, -0.8) {\textbf{CsvRelatorioGenerator}};
+\node[class] (json) at (0, -0.8) {\textbf{JsonRelatorioGenerator}};
+\node[class] (xml) at (4, -0.8) {\textbf{XmlRelatorioGenerator}};
+\node[class] (html) at (4, 0.5) {\textbf{HtmlRelatorioGenerator}};
+
+% Arrows: implements
+\draw[arrow] (pdf) -- (iface);
+\draw[arrow] (csv) -- (iface);
+\draw[arrow] (json) -- (iface);
+\draw[arrow] (xml) -- (iface);
+\draw[arrow] (html) -- (iface);
+
+% Arrow: factory creates
+\draw[uses] (factory) -- node[above, font=\scriptsize] {cria} (iface);
+
+\end{tikzpicture}
+\end{adjustbox}
+\caption{Diagrama de classes --- Padrão Factory Method aplicado aos geradores de relatório}
+\label{fig:factory-diagram}
+\end{figure}
+
+\subsection{Componentes Criados}
+
+\begin{enumerate}
+    \item \textbf{\texttt{RelatorioGenerator}} (interface) --- contrato comum com o método \texttt{gerar(Relatorio): String}
+    \item \textbf{\texttt{RelatorioGeneratorFactory}} --- fábrica centralizada com o método \texttt{criarGerador(FormatoRelatorio)}
+    \item \textbf{\texttt{XmlRelatorioGenerator}} --- novo gerador com escape de caracteres especiais XML
+    \item \textbf{\texttt{HtmlRelatorioGenerator}} --- novo gerador com estrutura HTML5 completa
+\end{enumerate}
+
+\subsection{Refatoração nos Serviços}
+
+\textbf{Antes} (\texttt{RelatorioService}):
+
+\begin{lstlisting}
+if (formato == FormatoRelatorio.PDF) {
+    PdfRelatorioGenerator generator = new PdfRelatorioGenerator();
+    return generator.gerar(relatorio);
+} else if (formato == FormatoRelatorio.CSV) {
+    CsvRelatorioGenerator generator = new CsvRelatorioGenerator();
+    return generator.gerar(relatorio);
+} else if (formato == FormatoRelatorio.JSON) {
+    // ...
+}
+\end{lstlisting}
+
+\textbf{Depois} (\texttt{RelatorioService}):
+
+\begin{lstlisting}
+RelatorioGenerator generator = generatorFactory.criarGerador(formato);
+return generator.gerar(relatorio);
+\end{lstlisting}
+
+A mesma simplificação foi aplicada ao \texttt{ExportacaoService}, eliminando completamente o bloco \texttt{switch/case}.
+
+% ================================================================
+% SEÇÃO 4
+% ================================================================
+\section{Explicação da Aplicação do Singleton}
+
+\subsection{Estrutura Implementada}
+
+A Figura~\ref{fig:singleton-diagram} apresenta o diagrama de classes da estrutura implementada com o padrão Singleton.
+
+\begin{figure}[h!]
+\centering
+\begin{adjustbox}{max width=\textwidth}
+\begin{tikzpicture}[
+    singleton/.style={rectangle, draw=unicampblue, fill=blue!5, minimum width=6.2cm, minimum height=3cm, text centered, font=\small\ttfamily},
+    service/.style={rectangle, draw=black, fill=backcolour, minimum width=4cm, minimum height=1cm, text centered, font=\small\ttfamily},
+    arrow/.style={->, >=stealth, thick}
+]
+
+% Singleton class
+\node[singleton] (config) at (0, 3) {
+    \begin{tabular}{c}
+    \textbf{ConfiguracaoSistema} \\[4pt]
+    \scriptsize --static instancia: ConfiguracaoSistema \\
+    \scriptsize --nomeEmpresa: String \\
+    \scriptsize --ambiente: String \\
+    \scriptsize --diretorioExportacao: String \\
+    \scriptsize --debugAtivo: boolean \\[4pt]
+    \scriptsize +static getInstancia(): ConfiguracaoSistema \\
+    \scriptsize +static resetInstancia(): void
+    \end{tabular}
+};
+
+% Services
+\node[service] (rs) at (-5, -1) {\textbf{RelatorioService}};
+\node[service] (es) at (0, -1) {\textbf{ExportacaoService}};
+\node[service] (cs) at (5, -1) {\textbf{ConfiguracaoService}};
+
+% Arrows
+\draw[arrow] (rs) -- node[left, font=\scriptsize, pos=0.5] {getInstancia()} (config);
+\draw[arrow] (es) -- node[left, font=\scriptsize, pos=0.5] {getInstancia()} (config);
+\draw[arrow] (cs) -- node[right, font=\scriptsize, pos=0.5] {getInstancia()} (config);
+
+\end{tikzpicture}
+\end{adjustbox}
+\caption{Diagrama de classes --- Padrão Singleton aplicado à configuração do sistema}
+\label{fig:singleton-diagram}
+\end{figure}
+
+\subsection{Implementação}
+
+\begin{itemize}
+    \item \textbf{Campo estático privado} \texttt{instancia} armazena a referência única
+    \item \textbf{Inicialização preguiçosa} (\textit{lazy initialization}) no método \texttt{getInstancia()}
+    \item \textbf{Método \texttt{resetInstancia()}} para permitir isolamento em testes automatizados
+    \item \textbf{Construtor público preservado} para compatibilidade com testes legados
+\end{itemize}
+
+\subsection{Resultado}
+
+\textbf{Antes:} três instâncias independentes com valores divergentes (nomes de empresa diferentes, ambientes diferentes, diretórios diferentes).
+
+\textbf{Depois:} todos os serviços compartilham exatamente a mesma instância via \texttt{ConfiguracaoSistema.getInstancia()}, garantindo consistência global.
+
+% ================================================================
+% SEÇÃO 5
+% ================================================================
+\section{Impactos da Refatoração na Organização e Extensibilidade do Sistema}
+
+\subsection{Resumo Quantitativo}
+
+\begin{table}[h!]
+\centering
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lll}
+\toprule
+\textbf{Métrica} & \textbf{Antes} & \textbf{Depois} \\
+\midrule
+Formatos suportados             & 3 (PDF, CSV, JSON)   & 5 (+ XML, HTML)            \\
+Pontos de criação de geradores  & 2 (duplicados)       & 1 (fábrica centralizada)   \\
+Instâncias de configuração      & 3 (inconsistentes)   & 1 (Singleton)              \\
+Testes automatizados            & 23                   & 60                         \\
+Arquivos de teste               & 3                    & 6                          \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\caption{Comparativo quantitativo antes e depois da refatoração}
+\end{table}
+
+\subsection{Impacto na Extensibilidade}
+
+\textbf{Adicionar um novo formato de relatório agora requer apenas:}
+
+\begin{enumerate}
+    \item Criar a classe geradora implementando \texttt{RelatorioGenerator}
+    \item Adicionar o valor ao enum \texttt{FormatoRelatorio}
+    \item Adicionar uma linha na fábrica \texttt{RelatorioGeneratorFactory}
+\end{enumerate}
+
+Nenhum serviço (\texttt{RelatorioService}, \texttt{ExportacaoService}) precisa ser modificado, pois eles dependem apenas da interface.
+
+\subsection{Impacto na Manutenção}
+
+\begin{itemize}
+    \item \textbf{Redução de duplicação}: a lógica de criação de geradores existe em apenas um local
+    \item \textbf{Consistência de configuração}: impossibilidade de ter ambientes divergentes entre serviços
+    \item \textbf{Código mais legível}: os serviços delegam a criação e focam na lógica de negócio
+    \item \textbf{Testabilidade}: a interface permite substituição por mocks em testes unitários
+\end{itemize}
+
+\subsection{Princípios SOLID Aplicados}
+
+\begin{table}[h!]
+\centering
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{>{\bfseries}l p{10cm}}
+\toprule
+\textbf{Princípio} & \textbf{Aplicação} \\
+\midrule
+SRP & A fábrica é responsável exclusivamente pela criação; os serviços focam na lógica de negócio \\
+OCP & Novos formatos podem ser adicionados sem modificar os serviços existentes \\
+DIP & Os serviços dependem da abstração \texttt{RelatorioGenerator}, não das classes concretas \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\caption{Princípios SOLID aplicados na refatoração}
+\end{table}
+
+\subsection{Testes Adicionados}
+
+\begin{itemize}
+    \item \textbf{\texttt{RelatorioGeneratorFactoryTest}} (22 testes) --- comportamento da fábrica, geradores XML e HTML, integração
+    \item \textbf{\texttt{SingletonConfiguracaoTest}} (8 testes) --- unicidade, valores padrão, reset, compartilhamento entre serviços
+    \item \textbf{\texttt{ExportacaoNovosFormatosTest}} (7 testes) --- exportação nos formatos XML e HTML
+\end{itemize}
+
+% ================================================================
+% SEÇÃO 6
+% ================================================================
+\section{Arquivos Modificados e Criados}
+
+\subsection{Arquivos Criados}
+
+\begin{itemize}
+    \item \texttt{generator/RelatorioGenerator.java} --- interface dos geradores
+    \item \texttt{generator/RelatorioGeneratorFactory.java} --- fábrica centralizada
+    \item \texttt{generator/XmlRelatorioGenerator.java} --- gerador XML
+    \item \texttt{generator/HtmlRelatorioGenerator.java} --- gerador HTML
+    \item \texttt{test/.../RelatorioGeneratorFactoryTest.java} --- testes da fábrica e novos formatos
+    \item \texttt{test/.../SingletonConfiguracaoTest.java} --- testes do Singleton
+    \item \texttt{test/.../ExportacaoNovosFormatosTest.java} --- testes de exportação novos formatos
+\end{itemize}
+
+\subsection{Arquivos Modificados}
+
+\begin{itemize}
+    \item \texttt{domain/ConfiguracaoSistema.java} --- adição do padrão Singleton
+    \item \texttt{domain/FormatoRelatorio.java} --- adição de XML e HTML
+    \item \texttt{generator/PdfRelatorioGenerator.java} --- implementa \texttt{RelatorioGenerator}
+    \item \texttt{generator/CsvRelatorioGenerator.java} --- implementa \texttt{RelatorioGenerator}
+    \item \texttt{generator/JsonRelatorioGenerator.java} --- implementa \texttt{RelatorioGenerator}
+    \item \texttt{service/RelatorioService.java} --- uso da fábrica e Singleton
+    \item \texttt{service/ExportacaoService.java} --- uso da fábrica e Singleton
+    \item \texttt{service/ConfiguracaoService.java} --- uso do Singleton
+    \item \texttt{Main.java} --- menu atualizado com novos formatos
+\end{itemize}
+
+\end{document}

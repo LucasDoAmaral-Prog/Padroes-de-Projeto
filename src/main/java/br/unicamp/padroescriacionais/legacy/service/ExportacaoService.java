@@ -3,38 +3,17 @@ package br.unicamp.padroescriacionais.legacy.service;
 import br.unicamp.padroescriacionais.legacy.domain.ConfiguracaoSistema;
 import br.unicamp.padroescriacionais.legacy.domain.FormatoRelatorio;
 import br.unicamp.padroescriacionais.legacy.domain.Relatorio;
-import br.unicamp.padroescriacionais.legacy.generator.CsvRelatorioGenerator;
-import br.unicamp.padroescriacionais.legacy.generator.JsonRelatorioGenerator;
-import br.unicamp.padroescriacionais.legacy.generator.PdfRelatorioGenerator;
+import br.unicamp.padroescriacionais.legacy.generator.RelatorioGenerator;
+import br.unicamp.padroescriacionais.legacy.generator.RelatorioGeneratorFactory;
 
 public class ExportacaoService {
 
-    private ConfiguracaoSistema configuracao = new ConfiguracaoSistema(
-            "Empresa XPTO Ltda.",
-            "PROD",
-            "/var/exports/relatorios",
-            false
-    );
+    private final ConfiguracaoSistema configuracao = ConfiguracaoSistema.getInstancia();
+    private final RelatorioGeneratorFactory generatorFactory = new RelatorioGeneratorFactory();
 
     public void exportar(Relatorio relatorio, FormatoRelatorio formato) {
-        String conteudoFormatado;
-
-        switch (formato) {
-            case PDF:
-                PdfRelatorioGenerator pdfGenerator = new PdfRelatorioGenerator();
-                conteudoFormatado = pdfGenerator.gerar(relatorio);
-                break;
-            case CSV:
-                CsvRelatorioGenerator csvGenerator = new CsvRelatorioGenerator();
-                conteudoFormatado = csvGenerator.gerar(relatorio);
-                break;
-            case JSON:
-                JsonRelatorioGenerator jsonGenerator = new JsonRelatorioGenerator();
-                conteudoFormatado = jsonGenerator.gerar(relatorio);
-                break;
-            default:
-                throw new IllegalArgumentException("Formato nao suportado para exportacao: " + formato);
-        }
+        RelatorioGenerator generator = generatorFactory.criarGerador(formato);
+        String conteudoFormatado = generator.gerar(relatorio);
 
         String nomeArquivo = relatorio.getTitulo()
                 .replace(" ", "_")
