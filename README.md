@@ -1,7 +1,7 @@
 # Sistema de Relatórios Corporativos — Refatorado
 
 > Atividade Prática — Padrões Criacionais de Projeto  
-> Disciplina: Padrões de Projeto de Software | Instituto de Computação — Unicamp
+> Disciplina: Padrões de Projeto de Software | Faculdade de Tecnologia — Unicamp
 
 ---
 
